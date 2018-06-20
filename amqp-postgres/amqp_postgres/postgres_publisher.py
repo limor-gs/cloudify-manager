@@ -70,6 +70,7 @@ class DBLogEventPublisher(object):
                     (items and (time() - self._last_commit > 0.5)):
                 db.engine.execute(LOG_INSERT_QUERY, items)
                 items = []
+                self._last_commit = time()
 
     @staticmethod
     def _safe_commit():
