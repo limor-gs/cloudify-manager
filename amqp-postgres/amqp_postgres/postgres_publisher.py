@@ -14,8 +14,9 @@
 # limitations under the License.
 ############
 
+import Queue
 from uuid import uuid4
-from time import time, sleep
+from time import time
 from threading import Thread, Lock
 from collections import OrderedDict, namedtuple
 
@@ -34,8 +35,8 @@ class DBLogEventPublisher(object):
 
     def __init__(self, app):
         self._lock = Lock()
-        self._batch = []
-        self._batch = []
+        self._batch = Queue.Queue()
+
         self._last_commit = time()
         self._app = app
         self._executions_cache = LimitedSizeDict(10000)
@@ -51,8 +52,7 @@ class DBLogEventPublisher(object):
     def process(self, message, exchange):
         execution = self._get_current_execution(message)
         item = self._get_item(message, exchange, execution)
-        with self._lock:
-            self._batch.append(item)
+        self._batch.put(item)
 
     def _message_publisher(self):
         # This needs to be done here, because we need to push the app context
@@ -60,13 +60,16 @@ class DBLogEventPublisher(object):
         db.init_app(self._app)
         self._app.app_context().push()
 
+        items = []
         while True:
-            if self._batch:
-                with self._lock:
-                    db.engine.execute(LOG_INSERT_QUERY, self._batch)
-                    self._last_commit = time()
-                    self._batch = []
-            sleep(self.COMMIT_DELAY)
+            try:
+                items.append(self._batch.get(0.3))
+            except Queue.Empty:
+                pass
+            if len(items) > 100 or \
+                    (items and (time() - self._last_commit > 0.5)):
+                db.engine.execute(LOG_INSERT_QUERY, items)
+                items = []
 
     @staticmethod
     def _safe_commit():
