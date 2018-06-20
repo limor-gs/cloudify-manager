@@ -25,11 +25,16 @@ from manager_rest.storage.models import Event, Log, Execution
 Exec = namedtuple('Execution', 'storage_id creator_id tenant_id')
 
 
+LOG_INSERT_QUERY = Log.__table__.insert()
+EVENT_INSERT_QUERY = Event.__table__.insert()
+
+
 class DBLogEventPublisher(object):
     COMMIT_DELAY = 0.1  # seconds
 
     def __init__(self, app):
         self._lock = Lock()
+        self._batch = []
         self._batch = []
         self._last_commit = time()
         self._app = app
@@ -58,8 +63,8 @@ class DBLogEventPublisher(object):
         while True:
             if self._batch:
                 with self._lock:
+                    db.engine.execute(LOG_INSERT_QUERY, self._batch)
                     db.session.bulk_save_objects(self._batch)
-                    self._safe_commit()
                     self._last_commit = time()
                     self._batch = []
             sleep(self.COMMIT_DELAY)
@@ -97,7 +102,7 @@ class DBLogEventPublisher(object):
 
     @staticmethod
     def _get_log(message, execution):
-        return Log(
+        return dict(
             id=str(uuid4()),
             reported_timestamp=message['timestamp'],
             logger=message['logger'],
@@ -112,7 +117,7 @@ class DBLogEventPublisher(object):
 
     @staticmethod
     def _get_event(message, execution):
-        return Event(
+        return dict(
             id=str(uuid4()),
             reported_timestamp=message['timestamp'],
             event_type=message['event_type'],
