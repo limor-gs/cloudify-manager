@@ -64,7 +64,6 @@ class DBLogEventPublisher(object):
             if self._batch:
                 with self._lock:
                     db.engine.execute(LOG_INSERT_QUERY, self._batch)
-                    db.session.bulk_save_objects(self._batch)
                     self._last_commit = time()
                     self._batch = []
             sleep(self.COMMIT_DELAY)
