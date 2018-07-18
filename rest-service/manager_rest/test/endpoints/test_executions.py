@@ -489,7 +489,6 @@ class ExecutionsTestCase(BaseServerTestCase):
             self._modify_execution_status_in_database(
                 execution=execution, new_status=last_status)
             response = self.patch(resource_path, {'status': next_status})
-            print (response.__dict__)
             self.assertEqual(
                 expected_error.status_code, response.status_code)
             self.assertEqual(

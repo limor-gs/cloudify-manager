@@ -285,7 +285,6 @@ class BlueprintsTestCase(base_test.BaseServerTestCase):
                                                     tmp_dir)
 
         size = self.client.blueprints.calc_size(blueprint_path)
-
         progress_func = generate_progress_func(
             total_size=size,
             assert_equal=self.assertEqual,
