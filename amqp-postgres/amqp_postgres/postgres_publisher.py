@@ -15,12 +15,12 @@
 ############
 
 import Queue
+import psycopg2
 from uuid import uuid4
 from time import time
 from threading import Thread, Lock
 from collections import OrderedDict, namedtuple
 
-from manager_rest.storage import db
 from manager_rest.storage.models import Event, Log, Execution
 
 Exec = namedtuple('Execution', 'storage_id creator_id tenant_id')
@@ -33,12 +33,12 @@ EVENT_INSERT_QUERY = Event.__table__.insert()
 class DBLogEventPublisher(object):
     COMMIT_DELAY = 0.1  # seconds
 
-    def __init__(self, app):
+    def __init__(self, config):
         self._lock = Lock()
         self._batch = Queue.Queue()
 
         self._last_commit = time()
-        self._app = app
+        self.config = config
         self._executions_cache = LimitedSizeDict(10000)
 
         # Create a separate thread to allow proper batching without losing
@@ -55,30 +55,35 @@ class DBLogEventPublisher(object):
         self._batch.put(item)
 
     def _message_publisher(self):
-        # This needs to be done here, because we need to push the app context
-        # in each separate thread for the `db` object to work in it
-        db.init_app(self._app)
-        self._app.app_context().push()
-
-        items = []
+        conn = psycopg2.connect(
+            dbname=self.config['postgresql_db_name'],
+            host=self.config['postgresql_host'],
+            user=self.config['postgresql_username'],
+            password=self.config['postgresql_password']
+        )
+        events, logs = [], []
         while True:
             try:
-                items.append(self._batch.get(0.3))
+                kind, item = self._batch.get(0.3)
             except Queue.Empty:
                 pass
-            if len(items) > 100 or \
-                    (items and (time() - self._last_commit > 0.5)):
-                db.engine.execute(LOG_INSERT_QUERY, items)
-                items = []
+            else:
+                target = events if kind == 'event' else logs
+                target.append(item)
+            if len(events) > 100 or \
+                    (events and (time() - self._last_commit > 0.5)):
+                with conn.cursor() as cur:
+                    cur.execute_batch(EVENT_INSERT_QUERY, events)
+                conn.commit()
+                events = []
                 self._last_commit = time()
-
-    @staticmethod
-    def _safe_commit():
-        try:
-            db.session.commit()
-        except BaseException:
-            db.session.rollback()
-            raise
+            if len(logs) > 100 or \
+                    (logs and (time() - self._last_commit > 0.5)):
+                with conn.cursor() as cur:
+                    cur.execute_batch(LOG_INSERT_QUERY, logs)
+                conn.commit()
+                logs = []
+                self._last_commit = time()
 
     def _get_current_execution(self, message):
         """ Return execution from cache if exists, or from DB if needed """
@@ -97,9 +102,9 @@ class DBLogEventPublisher(object):
 
     def _get_item(self, message, exchange, execution):
         if exchange == 'cloudify-events':
-            return self._get_event(message, execution)
+            return 'event', self._get_event(message, execution)
         elif exchange == 'cloudify-logs':
-            return self._get_log(message, execution)
+            return 'log', self._get_log(message, execution)
         else:
             raise ValueError('Unknown exchange type: {0}'.format(exchange))
 
