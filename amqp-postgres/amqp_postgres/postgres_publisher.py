@@ -149,9 +149,9 @@ class DBLogEventPublisher(object):
             message['level'],
             message['message']['text'],
             message['message_code'],
-            message['context']['operation'],
-            message['context']['node_id'],
-            message['context']['execution_id']
+            message['context'].get('operation'),
+            message['context'].get('node_id'),
+            message['context'].get('execution_id')
         )
 
     @staticmethod
@@ -161,8 +161,8 @@ class DBLogEventPublisher(object):
             message['event_type'],
             message['message']['text'],
             message['message_code'],
-            message['context']['operation'],
-            message['context']['node_id'],
-            message['context']['task_error_causes'],
-            message['context']['execution_id']
+            message['context'].get('operation'),
+            message['context'].get('node_id'),
+            message['context'].get('task_error_causes'),
+            message['context'].get('execution_id')
         )
